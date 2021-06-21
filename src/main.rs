@@ -1,8 +1,9 @@
 use flate2::read::GzDecoder;
-use tar::Archive;
+use tar::{Archive, Entry, EntryType};
 use std::env;
-use std::fs::File;
+use std::fs;
 use std::io::Read;
+use std::path::{Component, Path};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Read argument
@@ -17,11 +18,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None => {}
     }
 
-    let tar_gz = File::open(filename)?;
+    let tar_gz = fs::File::open(filename)?;
     let tar = GzDecoder::new(tar_gz);
     let mut archive = Archive::new(tar);
 
-    let destination = "dst";
+    let destination = Path::new("dst");
 
     // Delay directory entries until the end
     let mut directories = Vec::new();
@@ -29,7 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Unpack entries (similar to Archive::_unpack())
     for entry in archive.entries()? {
         let entry = entry?;
-        if entry.header().entry_type() == tar::EntryType::Directory {
+        if entry.header().entry_type() == EntryType::Directory {
             directories.push(entry);
         } else {
             unpack(entry, destination)?;
@@ -43,10 +44,54 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn unpack<'a, R: Read>(
-    mut entry: tar::Entry<'a, R>,
-    destination: &str,
-) -> std::io::Result<()> {
+    mut entry: Entry<'a, R>,
+    dst: &Path,
+) -> Result<bool, Box<dyn std::error::Error>> {
     // This extends Entry::unpack_in()
-    entry.unpack_in(destination)?;
-    Ok(())
+
+    let mut file_dst = dst.to_path_buf();
+    {
+        let path = entry.path().map_err(|_| {
+            format!("invalid path in entry header: {}", String::from_utf8_lossy(&entry.path_bytes()))
+        })?;
+        for part in path.components() {
+            match part {
+                // Leading '/' characters, root paths, and '.'
+                // components are just ignored and treated as "empty
+                // components"
+                Component::Prefix(..) | Component::RootDir | Component::CurDir => continue,
+
+                // If any part of the filename is '..', then skip over
+                // unpacking the file to prevent directory traversal
+                // security issues.  See, e.g.: CVE-2001-1267,
+                // CVE-2002-0399, CVE-2005-1918, CVE-2007-4131
+                Component::ParentDir => return Ok(false),
+
+                Component::Normal(part) => file_dst.push(part),
+            }
+        }
+    }
+
+    // Skip cases where only slashes or '.' parts were seen, because
+    // this is effectively an empty filename.
+    if *dst == *file_dst {
+        return Ok(true);
+    }
+
+    // Skip entries without a parent (i.e. outside of FS root)
+    let parent = match file_dst.parent() {
+        Some(p) => p,
+        None => return Ok(false),
+    };
+
+    if parent.symlink_metadata().is_err() {
+        fs::create_dir_all(&parent).map_err(|_| {
+            format!("failed to create `{}`", parent.display())
+        })?;
+    }
+
+    entry.unpack(&file_dst)
+        .map_err(|_| format!("failed to unpack `{}`", file_dst.display()))?;
+
+    Ok(true)
 }
