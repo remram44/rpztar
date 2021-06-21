@@ -1,6 +1,7 @@
 use flate2::read::GzDecoder;
 use tar::{Archive, Entry, EntryType};
 use std::env;
+use std::ffi::OsStr;
 use std::fs;
 use std::io::Read;
 use std::path::{Component, Path};
@@ -54,6 +55,9 @@ fn unpack<'a, R: Read>(
         let path = entry.path().map_err(|_| {
             format!("invalid path in entry header: {}", String::from_utf8_lossy(&entry.path_bytes()))
         })?;
+        // Check first component is "DATA"
+        let mut found_prefix = false;
+
         for part in path.components() {
             match part {
                 // Leading '/' characters, root paths, and '.'
@@ -67,7 +71,16 @@ fn unpack<'a, R: Read>(
                 // CVE-2002-0399, CVE-2005-1918, CVE-2007-4131
                 Component::ParentDir => return Ok(false),
 
-                Component::Normal(part) => file_dst.push(part),
+                Component::Normal(part) => {
+                    if !found_prefix {
+                        if part != "DATA".as_ref() as &OsStr {
+                            return Err(format!("invalid prefix: {}",  String::from_utf8_lossy(&entry.path_bytes())).into());
+                        }
+                        found_prefix = true;
+                    } else {
+                        file_dst.push(part);
+                    }
+                }
             }
         }
     }
