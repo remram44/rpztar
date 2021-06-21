@@ -18,6 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(_) => return Err("Too many arguments".into()),
         None => {}
     }
+    // TODO: Read file list
 
     let tar_gz = fs::File::open(filename)?;
     let tar = GzDecoder::new(tar_gz);
@@ -31,6 +32,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Unpack entries (similar to Archive::_unpack())
     for entry in archive.entries()? {
         let entry = entry?;
+
+        // TODO: Check if the file is in our list, otherwise `continue`
+
         if entry.header().entry_type() == EntryType::Directory {
             directories.push(entry);
         } else {
@@ -103,8 +107,14 @@ fn unpack<'a, R: Read>(
         })?;
     }
 
+    // TODO: If there is a directory at the destination, recursively delete it (and show a warning)
+
     entry.unpack(&file_dst)
         .map_err(|_| format!("failed to unpack `{}`", file_dst.display()))?;
+
+    // TODO: Restore ownership
+    entry.header().uid()?;
+    entry.header().gid()?;
 
     Ok(true)
 }
