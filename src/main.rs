@@ -1,16 +1,21 @@
 use flate2::read::GzDecoder;
 use tar::{Archive, Entry, EntryType};
+use std::collections::HashSet;
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
-use std::io::Read;
+use std::io::{BufRead, Read};
 use std::path::{Component, Path};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Read argument
+    // Read arguments
     let mut args = env::args();
     args.next().unwrap();
-    let filename = match args.next() {
+    let tar_filename = match args.next() {
+        Some(v) => v,
+        None => return Err("Missing argument".into()),
+    };
+    let list_filename = match args.next() {
         Some(v) => v,
         None => return Err("Missing argument".into()),
     };
@@ -18,9 +23,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(_) => return Err("Too many arguments".into()),
         None => {}
     }
-    // TODO: Read file list
+    // Read file list
+    let files: HashSet<Vec<u8>> = {
+        let list_file = fs::File::open(list_filename)?;
+        let list_file = std::io::BufReader::new(list_file);
+        let mut files = HashSet::new();
+        for file in list_file.split(0u8) {
+            let file = file?;
+            if file.len() > 0 {
+                files.insert(file);
+            }
+        }
+        files
+    };
 
-    let tar_gz = fs::File::open(filename)?;
+    // Open tar
+    let tar_gz = fs::File::open(tar_filename)?;
     let tar = GzDecoder::new(tar_gz);
     let mut archive = Archive::new(tar);
 
@@ -33,7 +51,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for entry in archive.entries()? {
         let entry = entry?;
 
-        // TODO: Check if the file is in our list, otherwise `continue`
+        // Check if the file is in our list
+        if !files.contains(entry.path_bytes().as_ref()) {
+            continue;
+        }
 
         if entry.header().entry_type() == EntryType::Directory {
             directories.push(entry);
