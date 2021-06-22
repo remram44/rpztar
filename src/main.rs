@@ -44,6 +44,10 @@ fn main() -> AResult<()> {
         files
     };
 
+    for file in &files {
+        eprintln!("filelist: {:?}", file);
+    }
+
     // Open tar
     let tar_gz = fs::File::open(tar_filename)
         .with_context(|| "Error opening tar file")?;
@@ -66,16 +70,19 @@ fn main() -> AResult<()> {
             None => continue,
         };
         if !files.contains(&path) {
+            eprintln!("skipping {:?}", path);
             continue;
         }
 
         if entry.header().entry_type() == EntryType::Directory {
             directories.push(entry);
         } else {
+            eprintln!("unpacking file {:?}", entry.path().unwrap());
             unpack(entry, destination)?;
         }
     }
     for entry in directories {
+        eprintln!("unpacking directory {:?}", entry.path().unwrap());
         unpack(entry, destination)?;
     }
 
@@ -161,6 +168,7 @@ fn unpack<'a, R: Read>(
                     Ok(m) => {
                         if !m.is_dir() {
                             // Exists and is a file: remove
+                            eprintln!("removing file {:?}", ancestor);
                             fs::remove_file(&ancestor)
                                 .with_context(|| format!("Error deleting {:?} to unpack {:?}", ancestor, file_dst))?;
                         } else {
@@ -196,12 +204,15 @@ fn unpack<'a, R: Read>(
                 }
             } else {
                 // Is a file: remove
+                eprintln!("removing file {:?}", &file_dst);
                 fs::remove_file(&file_dst)
                     .with_context(|| format!("Error removing file {:?} to extract {:?} over", file_dst, entry.header().entry_type()))?;
             }
         }
         Err(e) => return Err(e).with_context(|| format!("Error deleting {:?} to unpack over it", file_dst)),
     }
+
+    eprintln!("unpack {:?}", file_dst);
 
     entry.set_preserve_permissions(true);
     entry.set_preserve_mtime(true);
