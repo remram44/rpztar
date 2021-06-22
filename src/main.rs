@@ -4,10 +4,10 @@ use tar::{Archive, Entry, EntryType};
 use std::collections::HashSet;
 use std::convert::TryInto;
 use std::env;
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io::{BufRead, Read};
-use std::os::unix::ffi::OsStrExt;
+use std::os::unix::ffi::OsStringExt;
 use std::path::{Component, Path, PathBuf};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -26,15 +26,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(_) => return Err("Too many arguments".into()),
         None => {}
     }
+
     // Read file list
-    let files: HashSet<Vec<u8>> = {
+    let files: HashSet<PathBuf> = {
         let list_file = fs::File::open(list_filename)?;
         let list_file = std::io::BufReader::new(list_file);
         let mut files = HashSet::new();
         for file in list_file.split(0u8) {
             let file = file?;
             if file.len() > 0 {
-                files.insert(file);
+                let osstr: OsString = OsStringExt::from_vec(file);
+                files.insert(osstr.into());
             }
         }
         files
@@ -55,17 +57,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let entry = entry?;
 
         // Check if the file is in our list
-        let path = {
-            let path = entry.path().map_err(|_| {
-                format!("invalid path in entry header: {}", String::from_utf8_lossy(&entry.path_bytes()))
-            })?;
-            get_canonical_path(Path::new(""), &path)?
-        };
+        let path = get_canonical_path(Path::new(""), &entry)?;
         let path = match path {
             Some(p) => p,
             None => continue,
         };
-        if !files.contains(path.as_os_str().as_bytes()) {
+        if !files.contains(&path) {
             continue;
         }
 
@@ -82,7 +79,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn get_canonical_path(prefix: &Path, path: &Path) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
+fn get_canonical_path<'a, R: Read>(
+    prefix: &Path,
+    entry: &Entry<'a, R>,
+) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
+    let path = entry.path().map_err(|_| {
+        format!("invalid path in entry header: {}", String::from_utf8_lossy(&entry.path_bytes()))
+    })?;
+
     let mut file_dst = prefix.to_path_buf();
     {
         // Check first component is "DATA"
@@ -123,12 +127,7 @@ fn unpack<'a, R: Read>(
 ) -> Result<(), Box<dyn std::error::Error>> {
     // This extends Entry::unpack_in()
 
-    let file_dst = {
-        let path = entry.path().map_err(|_| {
-            format!("invalid path in entry header: {}", String::from_utf8_lossy(&entry.path_bytes()))
-        })?;
-        get_canonical_path(dst, &path)?
-    };
+    let file_dst = get_canonical_path(dst, &entry)?;
     let file_dst = match file_dst {
         Some(p) => p,
         None => return Ok(()),
@@ -200,7 +199,7 @@ fn unpack<'a, R: Read>(
     entry.set_preserve_permissions(true);
     entry.set_preserve_mtime(true);
     entry.unpack(&file_dst)
-        .map_err(|_| format!("failed to unpack `{}`", file_dst.display()))?;
+        .map_err(|_| format!("failed to unpack `{:?}`", file_dst))?;
 
     // Restore ownership
     chown(
