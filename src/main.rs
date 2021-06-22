@@ -7,7 +7,7 @@ use std::env;
 use std::ffi::OsStr;
 use std::fs;
 use std::io::{BufRead, Read};
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Read arguments
@@ -71,17 +71,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn unpack<'a, R: Read>(
-    mut entry: Entry<'a, R>,
-    dst: &Path,
-) -> Result<(), Box<dyn std::error::Error>> {
-    // This extends Entry::unpack_in()
-
-    let mut file_dst = dst.to_path_buf();
+fn get_canonical_path(prefix: &Path, path: &Path) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let mut file_dst = prefix.to_path_buf();
     {
-        let path = entry.path().map_err(|_| {
-            format!("invalid path in entry header: {}", String::from_utf8_lossy(&entry.path_bytes()))
-        })?;
         // Check first component is "DATA"
         let mut found_prefix = false;
 
@@ -111,6 +103,21 @@ fn unpack<'a, R: Read>(
             }
         }
     }
+    Ok(file_dst)
+}
+
+fn unpack<'a, R: Read>(
+    mut entry: Entry<'a, R>,
+    dst: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // This extends Entry::unpack_in()
+
+    let file_dst = {
+        let path = entry.path().map_err(|_| {
+            format!("invalid path in entry header: {}", String::from_utf8_lossy(&entry.path_bytes()))
+        })?;
+        get_canonical_path(dst, &path)?
+    };
 
     // Skip cases where only slashes or '.' parts were seen, because
     // this is effectively an empty filename.
