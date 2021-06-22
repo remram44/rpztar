@@ -7,3 +7,9 @@ edition = "2018"
 flate2 = "*"
 nix = "*"
 tar = "*"
+
+[profile.release]
+opt-level = 'z'  # Optimize for size
+lto = true
+codegen-units = 1
+panic = 'abort'
