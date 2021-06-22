@@ -122,13 +122,54 @@ fn unpack<'a, R: Read>(
         None => return Ok(false),
     };
 
-    if parent.symlink_metadata().is_err() {
-        fs::create_dir_all(&parent).map_err(|_| {
-            format!("failed to create `{}`", parent.display())
-        })?;
+    // Create parent directories, removing existing files
+    let mut ancestor = dst.to_path_buf();
+    for part in parent.components() {
+        match part {
+            Component::Normal(part) => {
+                ancestor.push(part);
+
+                match fs::symlink_metadata(&ancestor) {
+                    // Does not exist: good
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Ok(m) => {
+                        if !m.is_dir() {
+                            // Exists and is a file: remove
+                            fs::remove_file(&ancestor)?;
+                        }
+                        // Exists and is a directory: good, we'll restore
+                        // permissions later
+                    }
+                    Err(e) => return Err(e.into()),
+                }
+
+                fs::create_dir(&ancestor)?;
+            }
+            _ => {}
+        }
     }
 
-    // TODO: If there is a directory at the destination, recursively delete it (and show a warning)
+    // Remove existing file or directory at destination
+    match fs::symlink_metadata(&file_dst) {
+        // Does not exist: good
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Ok(m) => {
+            if m.is_dir() {
+                if entry.header().entry_type() == EntryType::Directory {
+                    // Is a directory, as expected: ignore
+                    // unpack() will restore permissions
+                } else {
+                    // Is a directory, where we want a file: remove
+                    eprintln!("removing directory {:?}", &file_dst);
+                    fs::remove_dir_all(&file_dst)?;
+                }
+            } else {
+                // Is a file: remove
+                fs::remove_file(&file_dst)?;
+            }
+        }
+        Err(e) => return Err(e.into()),
+    }
 
     entry.unpack(&file_dst)
         .map_err(|_| format!("failed to unpack `{}`", file_dst.display()))?;
