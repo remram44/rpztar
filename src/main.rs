@@ -74,7 +74,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn unpack<'a, R: Read>(
     mut entry: Entry<'a, R>,
     dst: &Path,
-) -> Result<bool, Box<dyn std::error::Error>> {
+) -> Result<(), Box<dyn std::error::Error>> {
     // This extends Entry::unpack_in()
 
     let mut file_dst = dst.to_path_buf();
@@ -96,12 +96,12 @@ fn unpack<'a, R: Read>(
                 // unpacking the file to prevent directory traversal
                 // security issues.  See, e.g.: CVE-2001-1267,
                 // CVE-2002-0399, CVE-2005-1918, CVE-2007-4131
-                Component::ParentDir => return Ok(false),
+                Component::ParentDir => return Err(format!("invalid path: {:?}", path).into()),
 
                 Component::Normal(part) => {
                     if !found_prefix {
                         if part != "DATA".as_ref() as &OsStr {
-                            return Err(format!("invalid prefix: {}",  String::from_utf8_lossy(&entry.path_bytes())).into());
+                            return Err(format!("invalid prefix: {:?}",  path).into());
                         }
                         found_prefix = true;
                     } else {
@@ -114,14 +114,14 @@ fn unpack<'a, R: Read>(
 
     // Skip cases where only slashes or '.' parts were seen, because
     // this is effectively an empty filename.
-    if *dst == *file_dst {
-        return Ok(true);
+    if dst == &file_dst {
+        return Ok(());
     }
 
     // Skip entries without a parent (i.e. outside of FS root)
     let parent = match file_dst.parent() {
         Some(p) => p,
-        None => return Ok(false),
+        None => return Ok(()),
     };
 
     // Create parent directories, removing existing files
@@ -185,5 +185,5 @@ fn unpack<'a, R: Read>(
         Some(Gid::from_raw(entry.header().gid()?.try_into()?)),
     )?;
 
-    Ok(true)
+    Ok(())
 }
