@@ -1,6 +1,8 @@
 use flate2::read::GzDecoder;
+use nix::unistd::{Gid, Uid, chown};
 use tar::{Archive, Entry, EntryType};
 use std::collections::HashSet;
+use std::convert::TryInto;
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
@@ -174,9 +176,12 @@ fn unpack<'a, R: Read>(
     entry.unpack(&file_dst)
         .map_err(|_| format!("failed to unpack `{}`", file_dst.display()))?;
 
-    // TODO: Restore ownership
-    entry.header().uid()?;
-    entry.header().gid()?;
+    // Restore ownership
+    chown(
+        &file_dst,
+        Some(Uid::from_raw(entry.header().uid()?.try_into()?)),
+        Some(Gid::from_raw(entry.header().gid()?.try_into()?)),
+    )?;
 
     Ok(true)
 }
