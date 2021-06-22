@@ -7,6 +7,7 @@ use std::env;
 use std::ffi::OsStr;
 use std::fs;
 use std::io::{BufRead, Read};
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Component, Path, PathBuf};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -54,7 +55,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let entry = entry?;
 
         // Check if the file is in our list
-        if !files.contains(entry.path_bytes().as_ref()) {
+        let path = {
+            let path = entry.path().map_err(|_| {
+                format!("invalid path in entry header: {}", String::from_utf8_lossy(&entry.path_bytes()))
+            })?;
+            get_canonical_path(Path::new(""), &path)?
+        };
+        if !files.contains(path.as_os_str().as_bytes()) {
             continue;
         }
 
