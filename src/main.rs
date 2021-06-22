@@ -173,6 +173,8 @@ fn unpack<'a, R: Read>(
         Err(e) => return Err(e.into()),
     }
 
+    entry.set_preserve_permissions(true);
+    entry.set_preserve_mtime(true);
     entry.unpack(&file_dst)
         .map_err(|_| format!("failed to unpack `{}`", file_dst.display()))?;
 
