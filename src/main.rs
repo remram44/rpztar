@@ -160,9 +160,11 @@ fn unpack<'a, R: Read>(
                         if !m.is_dir() {
                             // Exists and is a file: remove
                             fs::remove_file(&ancestor)?;
+                        } else {
+                            // Exists and is a directory: good, we'll restore
+                            // permissions later
+                            continue;
                         }
-                        // Exists and is a directory: good, we'll restore
-                        // permissions later
                     }
                     Err(e) => return Err(e.into()),
                 }
