@@ -45,7 +45,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tar = GzDecoder::new(tar_gz);
     let mut archive = Archive::new(tar);
 
-    let destination = Path::new("dst");
+    let destination = Path::new("");
 
     // Delay directory entries until the end
     let mut directories = Vec::new();
