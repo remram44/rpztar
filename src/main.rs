@@ -1,6 +1,6 @@
 use anyhow::{Context, Result as AResult, anyhow};
 use flate2::read::GzDecoder;
-use nix::unistd::{Gid, Uid, chown};
+use nix::unistd::{FchownatFlags, Gid, Uid, fchownat};
 use tar::{Archive, Entry, EntryType};
 use std::collections::HashSet;
 use std::convert::TryInto;
@@ -209,10 +209,12 @@ fn unpack<'a, R: Read>(
         .with_context(|| format!("failed to unpack `{:?}`", file_dst))?;
 
     // Restore ownership
-    chown(
+    fchownat(
+        None,
         &file_dst,
         Some(Uid::from_raw(entry.header().uid()?.try_into()?)),
         Some(Gid::from_raw(entry.header().gid()?.try_into()?)),
+        FchownatFlags::NoFollowSymlink,
     ).with_context(|| format!("Error restoring ownership of {:?}", file_dst))?;
 
     Ok(())
