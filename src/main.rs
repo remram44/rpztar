@@ -61,6 +61,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             })?;
             get_canonical_path(Path::new(""), &path)?
         };
+        let path = match path {
+            Some(p) => p,
+            None => continue,
+        };
         if !files.contains(path.as_os_str().as_bytes()) {
             continue;
         }
@@ -78,7 +82,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn get_canonical_path(prefix: &Path, path: &Path) -> Result<PathBuf, Box<dyn std::error::Error>> {
+fn get_canonical_path(prefix: &Path, path: &Path) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
     let mut file_dst = prefix.to_path_buf();
     {
         // Check first component is "DATA"
@@ -100,7 +104,7 @@ fn get_canonical_path(prefix: &Path, path: &Path) -> Result<PathBuf, Box<dyn std
                 Component::Normal(part) => {
                     if !found_prefix {
                         if part != "DATA".as_ref() as &OsStr {
-                            return Err(format!("invalid prefix: {:?}",  path).into());
+                            return Ok(None);
                         }
                         found_prefix = true;
                     } else {
@@ -110,7 +114,7 @@ fn get_canonical_path(prefix: &Path, path: &Path) -> Result<PathBuf, Box<dyn std
             }
         }
     }
-    Ok(file_dst)
+    Ok(Some(file_dst))
 }
 
 fn unpack<'a, R: Read>(
@@ -124,6 +128,10 @@ fn unpack<'a, R: Read>(
             format!("invalid path in entry header: {}", String::from_utf8_lossy(&entry.path_bytes()))
         })?;
         get_canonical_path(dst, &path)?
+    };
+    let file_dst = match file_dst {
+        Some(p) => p,
+        None => return Ok(()),
     };
 
     // Skip cases where only slashes or '.' parts were seen, because
