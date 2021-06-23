@@ -12,4 +12,5 @@ ENV PATH=$PATH:/bin:/root/.cargo/bin
 WORKDIR /src
 
 RUN rustup target add x86_64-unknown-linux-musl
+RUN rustup target add i686-unknown-linux-musl
 ENV PKG_CONFIG_ALLOW_CROSS=1
