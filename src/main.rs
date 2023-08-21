@@ -103,11 +103,15 @@ fn unpack_rpz(tar: &mut dyn Read, files: Option<HashSet<PathBuf>>, recurse: bool
         if entry.header().entry_type() == EntryType::Directory {
             directories.push(entry);
         } else {
-            unpack(entry, destination)?;
+            if let Err(e) = unpack(entry, destination) {
+                eprintln!("{}", e);
+            }
         }
     }
     for entry in directories {
-        unpack(entry, destination)?;
+        if let Err(e) = unpack(entry, destination) {
+            eprintln!("{}", e);
+        }
     }
 
     Ok(())
