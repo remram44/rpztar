@@ -19,29 +19,29 @@ fn main() -> AResult<()> {
         Some(v) => v,
         None => return Err(anyhow!("Missing argument")),
     };
-    let list_filename = match args.next() {
-        Some(v) => v,
-        None => return Err(anyhow!("Missing argument")),
-    };
+    let list_filename = args.next();
     match args.next() {
         Some(_) => return Err(anyhow!("Too many arguments")),
         None => {}
     }
 
     // Read file list
-    let files: HashSet<PathBuf> = {
-        let list_file = fs::File::open(list_filename)
-            .with_context(|| "Error opening list file")?;
-        let list_file = std::io::BufReader::new(list_file);
-        let mut files = HashSet::new();
-        for file in list_file.split(0u8) {
-            let file = file.with_context(|| "Error reading list")?;
-            if file.len() > 0 {
-                let osstr: OsString = OsStringExt::from_vec(file);
-                files.insert(osstr.into());
+    let files: Option<HashSet<PathBuf>> = match list_filename {
+        Some(list_filename) => {
+            let list_file = fs::File::open(list_filename)
+                .with_context(|| "Error opening list file")?;
+            let list_file = std::io::BufReader::new(list_file);
+            let mut files = HashSet::new();
+            for file in list_file.split(0u8) {
+                let file = file.with_context(|| "Error reading list")?;
+                if file.len() > 0 {
+                    let osstr: OsString = OsStringExt::from_vec(file);
+                    files.insert(osstr.into());
+                }
             }
+            Some(files)
         }
-        files
+        None => None
     };
 
     // Open tar
@@ -65,8 +65,10 @@ fn main() -> AResult<()> {
             Some(p) => p,
             None => continue,
         };
-        if !files.contains(&path) {
-            continue;
+        if let Some(ref files) = files {
+            if !files.contains(&path) {
+                continue;
+            }
         }
 
         if entry.header().entry_type() == EntryType::Directory {
