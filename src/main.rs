@@ -7,7 +7,7 @@ use std::convert::TryInto;
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::fs;
-use std::io::{BufRead, Read};
+use std::io::{BufRead, Read, Seek, SeekFrom};
 use std::os::unix::ffi::OsStringExt;
 use std::path::{Component, Path, PathBuf};
 
@@ -44,10 +44,24 @@ fn main() -> AResult<()> {
         None => None
     };
 
-    // Open tar
-    let tar_gz = fs::File::open(tar_filename)
+    // Open tar file
+    let mut tar = fs::File::open(tar_filename)
         .with_context(|| "Error opening tar file")?;
-    let tar = GzDecoder::new(tar_gz);
+
+    // Decompress maybe
+    let decompressed = GzDecoder::new(&mut tar);
+    if decompressed.header().is_some() {
+        unpack_rpz(decompressed, files, true)?;
+    } else {
+        drop(decompressed);
+        tar.seek(SeekFrom::Start(0))?;
+        unpack_rpz(tar, files, true)?;
+    }
+
+    Ok(())
+}
+
+fn unpack_rpz<R: Read>(tar: R, files: Option<HashSet<PathBuf>>, recurse: bool) -> AResult<()> {
     let mut archive = Archive::new(tar);
 
     let destination = Path::new("");
@@ -58,6 +72,21 @@ fn main() -> AResult<()> {
     // Unpack entries (similar to Archive::_unpack())
     for entry in archive.entries()? {
         let entry = entry?;
+
+        let path = entry.path().with_context(|| {
+            format!("invalid path in entry header: {}", String::from_utf8_lossy(&entry.path_bytes()))
+        })?;
+
+        // Ignore these, they are valid in a RPZ
+        if path.starts_with("METADATA") || path.starts_with("EXTENSIONS") {
+            continue;
+        }
+
+        // If we find a DATA.tar.gz, then we won't find any data, it's in there
+        // Recurse into that tar
+        if recurse && path == Path::new("DATA.tar.gz") {
+            return unpack_rpz(GzDecoder::new(entry), files, false);
+        }
 
         // Check if the file is in our list
         let path = get_canonical_path(Path::new(""), &entry)?;
