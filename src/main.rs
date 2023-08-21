@@ -49,19 +49,19 @@ fn main() -> AResult<()> {
         .with_context(|| "Error opening tar file")?;
 
     // Decompress maybe
-    let decompressed = GzDecoder::new(&mut tar);
+    let mut decompressed = GzDecoder::new(&mut tar);
     if decompressed.header().is_some() {
-        unpack_rpz(decompressed, files, true)?;
+        unpack_rpz(&mut decompressed, files, true)?;
     } else {
         drop(decompressed);
         tar.seek(SeekFrom::Start(0))?;
-        unpack_rpz(tar, files, true)?;
+        unpack_rpz(&mut tar, files, true)?;
     }
 
     Ok(())
 }
 
-fn unpack_rpz<R: Read>(tar: R, files: Option<HashSet<PathBuf>>, recurse: bool) -> AResult<()> {
+fn unpack_rpz(tar: &mut dyn Read, files: Option<HashSet<PathBuf>>, recurse: bool) -> AResult<()> {
     let mut archive = Archive::new(tar);
 
     let destination = Path::new("");
@@ -71,7 +71,7 @@ fn unpack_rpz<R: Read>(tar: R, files: Option<HashSet<PathBuf>>, recurse: bool) -
 
     // Unpack entries (similar to Archive::_unpack())
     for entry in archive.entries()? {
-        let entry = entry?;
+        let mut entry = entry?;
 
         let path = entry.path().with_context(|| {
             format!("invalid path in entry header: {}", String::from_utf8_lossy(&entry.path_bytes()))
@@ -85,7 +85,7 @@ fn unpack_rpz<R: Read>(tar: R, files: Option<HashSet<PathBuf>>, recurse: bool) -
         // If we find a DATA.tar.gz, then we won't find any data, it's in there
         // Recurse into that tar
         if recurse && path == Path::new("DATA.tar.gz") {
-            return unpack_rpz(GzDecoder::new(entry), files, false);
+            return unpack_rpz(&mut GzDecoder::new(&mut entry), files, false);
         }
 
         // Check if the file is in our list
